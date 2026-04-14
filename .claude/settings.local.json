@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(aws sts *)",
+      "Bash(aws route53 *)"
+    ]
+  }
+}
