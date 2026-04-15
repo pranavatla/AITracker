@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AITracker backend — API Gateway + Lambda + DynamoDB
+
+Parameters:
+  CognitoUserPoolArn:
+    Type: String
+    Default: arn:aws:cognito-idp:ap-south-1:361739112666:userpool/ap-south-1_60fuD4SDi
+
+Resources:
+
+  # ── DynamoDB ────────────────────────────────────────────────────────────────
+  TasksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: aitracker-tasks
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+
+  # ── API Gateway ─────────────────────────────────────────────────────────────
+  TrackerApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      # Cognito authorizer — verifies the JWT access token on every request
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false   # OPTIONS must be unauthenticated
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !Ref CognitoUserPoolArn
+      # CORS — Lambda also returns these headers so both preflight and actual requests work
+      Cors:
+        AllowMethods: "'GET,PUT,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+
+  # ── Lambda ──────────────────────────────────────────────────────────────────
+  ProgressFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: aitracker-progress
+      CodeUri: lambda/
+      Handler: index.handler
+      Runtime: nodejs20.x
+      MemorySize: 128
+      Timeout: 10
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TasksTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TasksTable
+      Events:
+        GetProgress:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TrackerApi
+            Path: /progress
+            Method: GET
+        PutProgress:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TrackerApi
+            Path: /progress
+            Method: PUT
+        # OPTIONS is unauthenticated (CORS preflight)
+        OptionsProgress:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TrackerApi
+            Path: /progress
+            Method: OPTIONS
+            Auth:
+              Authorizer: NONE
+
+Outputs:
+  ApiUrl:
+    Description: API base URL (use as VITE_API_BASE_URL)
+    Value: !Sub "https://${TrackerApi}.execute-api.ap-south-1.amazonaws.com/prod"

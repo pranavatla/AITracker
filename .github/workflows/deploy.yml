@@ -21,10 +21,43 @@ jobs:
           node-version: 20
           cache: npm
 
+      # ── Backend infrastructure ─────────────────────────────────────────────
+      - name: Install SAM CLI
+        run: pip install aws-sam-cli
+
+      - name: Build Lambda
+        run: sam build --template-file infrastructure/template.yaml
+
+      - name: Deploy backend (SAM)
+        run: |
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name aitracker-backend \
+            --capabilities CAPABILITY_IAM \
+            --region ap-south-1 \
+            --resolve-s3 \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Get API URL
+        id: api
+        run: |
+          URL=$(aws cloudformation describe-stacks \
+            --stack-name aitracker-backend \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      # ── Frontend build + deploy ────────────────────────────────────────────
       - name: Install dependencies
         run: npm ci
 
       - name: Build
+        env:
+          VITE_COGNITO_DOMAIN: aitracker-auth-361739112666.auth.ap-south-1.amazoncognito.com
+          VITE_COGNITO_CLIENT_ID: 6f5f8iq0pcpugvc5e9rl1se161
+          VITE_COGNITO_REDIRECT_URI: https://aitracker.atla.in
+          VITE_API_BASE_URL: ${{ steps.api.outputs.url }}
         run: npm run build
 
       - name: Deploy to S3
