@@ -308,7 +308,6 @@ export default function FinalPlan({ accessToken, onLogout }) {
   const [view, setView] = useState("plan");
   const [syncing, setSyncing] = useState(true);
   const firstLoadRef = useRef(false);
-  const saveTimerRef = useRef(null);
 
   // Load progress from API on mount
   useEffect(() => {
@@ -320,20 +319,16 @@ export default function FinalPlan({ accessToken, onLogout }) {
       .catch(() => setSyncing(false));
   }, [accessToken]);
 
-  // Save progress to API (debounced 1.5 s) after initial load
+  // Save progress immediately on every change — no debounce so a refresh never loses data
   useEffect(() => {
     const API = import.meta.env.VITE_API_BASE_URL;
     if (!accessToken || !API) return;
     if (!firstLoadRef.current) { firstLoadRef.current = true; return; }
-    clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      fetch(`${API}/progress`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify(tasks),
-      }).catch(console.error);
-    }, 1500);
-    return () => clearTimeout(saveTimerRef.current);
+    fetch(`${API}/progress`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(tasks),
+    }).catch(console.error);
   }, [tasks]);
 
   const toggle = (w, d) => { const k = `${w}-${d}`; setTasks(p => ({ ...p, [k]: !p[k] })); };
