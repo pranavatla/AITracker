@@ -1,8 +1,16 @@
 const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, GetCommand, PutCommand } = require('@aws-sdk/lib-dynamodb');
+const { CognitoJwtVerifier } = require('aws-jwt-verify');
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const TABLE = process.env.TABLE_NAME;
+
+// Verify Cognito access tokens directly in Lambda — more reliable than API Gateway authorizer
+const verifier = CognitoJwtVerifier.create({
+  userPoolId: process.env.COGNITO_USER_POOL_ID,
+  tokenUse: 'access',
+  clientId: process.env.COGNITO_CLIENT_ID,
+});
 
 const HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -18,17 +26,24 @@ const respond = (statusCode, body) => ({
 });
 
 exports.handler = async (event) => {
-  console.log('method:', event.httpMethod);
-  console.log('authorizer:', JSON.stringify(event.requestContext?.authorizer));
-
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: HEADERS, body: '' };
   }
 
-  // userId comes from the API Gateway Cognito authorizer — no manual JWT verification needed
-  const userId = event.requestContext?.authorizer?.claims?.sub;
-  console.log('userId:', userId);
-  if (!userId) return respond(401, { error: 'Unauthorized' });
+  // Verify the JWT and extract the user identity
+  const authHeader = event.headers?.Authorization || event.headers?.authorization || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+
+  if (!token) return respond(401, { error: 'Missing token' });
+
+  let userId;
+  try {
+    const payload = await verifier.verify(token);
+    userId = payload.sub;
+  } catch (err) {
+    console.error('Token verification failed:', err.message);
+    return respond(401, { error: 'Invalid token' });
+  }
 
   if (event.httpMethod === 'GET') {
     const result = await ddb.send(new GetCommand({ TableName: TABLE, Key: { userId } }));

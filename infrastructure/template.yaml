@@ -2,11 +2,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: AITracker backend — API Gateway + Lambda + DynamoDB
 
-Parameters:
-  CognitoUserPoolArn:
-    Type: String
-    Default: arn:aws:cognito-idp:ap-south-1:361739112666:userpool/ap-south-1_60fuD4SDi
-
 Resources:
 
   # ── DynamoDB ────────────────────────────────────────────────────────────────
@@ -15,6 +10,7 @@ Resources:
     Properties:
       TableName: aitracker-tasks
       BillingMode: PAY_PER_REQUEST
+      DeletionPolicy: Retain
       AttributeDefinitions:
         - AttributeName: userId
           AttributeType: S
@@ -27,14 +23,7 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: prod
-      # Cognito authorizer — verifies the JWT access token on every request
-      Auth:
-        DefaultAuthorizer: CognitoAuthorizer
-        AddDefaultAuthorizerToCorsPreflight: false   # OPTIONS must be unauthenticated
-        Authorizers:
-          CognitoAuthorizer:
-            UserPoolArn: !Ref CognitoUserPoolArn
-      # CORS — Lambda also returns these headers so both preflight and actual requests work
+      # No API Gateway-level authorizer — JWT verification is done inside Lambda
       Cors:
         AllowMethods: "'GET,PUT,OPTIONS'"
         AllowHeaders: "'Content-Type,Authorization'"
@@ -53,6 +42,8 @@ Resources:
       Environment:
         Variables:
           TABLE_NAME: !Ref TasksTable
+          COGNITO_USER_POOL_ID: ap-south-1_60fuD4SDi
+          COGNITO_CLIENT_ID: 6f5f8iq0pcpugvc5e9rl1se161
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TasksTable
@@ -69,15 +60,12 @@ Resources:
             RestApiId: !Ref TrackerApi
             Path: /progress
             Method: PUT
-        # OPTIONS is unauthenticated (CORS preflight)
         OptionsProgress:
           Type: Api
           Properties:
             RestApiId: !Ref TrackerApi
             Path: /progress
             Method: OPTIONS
-            Auth:
-              Authorizer: NONE
 
 Outputs:
   ApiUrl:
