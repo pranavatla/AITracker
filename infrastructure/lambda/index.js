@@ -18,12 +18,16 @@ const respond = (statusCode, body) => ({
 });
 
 exports.handler = async (event) => {
+  console.log('method:', event.httpMethod);
+  console.log('authorizer:', JSON.stringify(event.requestContext?.authorizer));
+
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: HEADERS, body: '' };
   }
 
   // userId comes from the API Gateway Cognito authorizer — no manual JWT verification needed
   const userId = event.requestContext?.authorizer?.claims?.sub;
+  console.log('userId:', userId);
   if (!userId) return respond(401, { error: 'Unauthorized' });
 
   if (event.httpMethod === 'GET') {
