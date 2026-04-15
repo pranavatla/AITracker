@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const WEEKS = [
   {
@@ -302,10 +302,39 @@ function ProgressRing({ pct, size = 54, stroke = 4, color }) {
   );
 }
 
-export default function FinalPlan() {
+export default function FinalPlan({ accessToken, onLogout }) {
   const [tasks, setTasks] = useState({});
   const [expanded, setExpanded] = useState(1);
   const [view, setView] = useState("plan");
+  const [syncing, setSyncing] = useState(true);
+  const firstLoadRef = useRef(false);
+  const saveTimerRef = useRef(null);
+
+  // Load progress from API on mount
+  useEffect(() => {
+    const API = import.meta.env.VITE_API_BASE_URL;
+    if (!accessToken || !API) { setSyncing(false); return; }
+    fetch(`${API}/progress`, { headers: { Authorization: `Bearer ${accessToken}` } })
+      .then(r => r.ok ? r.json() : {})
+      .then(data => { setTasks(data); setSyncing(false); })
+      .catch(() => setSyncing(false));
+  }, [accessToken]);
+
+  // Save progress to API (debounced 1.5 s) after initial load
+  useEffect(() => {
+    const API = import.meta.env.VITE_API_BASE_URL;
+    if (!accessToken || !API) return;
+    if (!firstLoadRef.current) { firstLoadRef.current = true; return; }
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      fetch(`${API}/progress`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify(tasks),
+      }).catch(console.error);
+    }, 1500);
+    return () => clearTimeout(saveTimerRef.current);
+  }, [tasks]);
 
   const toggle = (w, d) => { const k = `${w}-${d}`; setTasks(p => ({ ...p, [k]: !p[k] })); };
   const wp = (wn) => { const w = WEEKS.find(x => x.week === wn); if (!w) return { d: 0, t: 0, p: 0 }; const t = w.daily.length; const d = w.daily.filter((_, i) => tasks[`${wn}-${i}`]).length; return { d, t, p: Math.round((d/t)*100) }; };
@@ -334,11 +363,18 @@ export default function FinalPlan() {
               <p style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>Apr 14 → Jul 21, 2026 · ~30 hrs/week · Staff/Lead LLM Data Scientist track</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {syncing && <span style={{ fontSize: 11, color: "#475569" }}>Syncing…</span>}
               <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <ProgressRing pct={totalP} color="#14b8a6" />
                 <span style={{ position: "absolute", fontSize: 12, fontWeight: 700, fontFamily: "'JetBrains Mono'", color: "#14b8a6" }}>{totalP}%</span>
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, fontFamily: "'JetBrains Mono'" }}>{totalD}/{totalT}</div>
+              {onLogout && (
+                <button onClick={onLogout} style={{
+                  fontSize: 11, padding: "3px 9px", background: "transparent",
+                  border: "1px solid #334155", borderRadius: 5, color: "#64748b", cursor: "pointer",
+                }}>Sign out</button>
+              )}
             </div>
           </div>
           <div style={{ display: "flex", gap: 3, marginTop: 12 }}>
